@@ -1,0 +1,115 @@
+
+[project]
+name = "rclone-client-bin"
+description = "Rclone client including the binaries."
+version = "0.0.1"
+authors = [{ name = "Michael G", email = "me@mgineer85.de" }]
+maintainers = [{ name = "Michael G", email = "me@mgineer85.de" }]
+requires-python = ">=3.11"
+readme = "README.md"
+license = { text = "MIT" }
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
+]
+keywords = ["rclone"]
+
+
+dependencies = ["niquests"]
+
+
+# [project.urls]
+# homepage = "https://photobooth-app.org/wigglegramcamera/"
+# repository = "https://github.com/photobooth-app/wigglecam"
+# documentation = "https://photobooth-app.org/wigglegramcamera/"
+
+# [project.scripts]
+# wigglecam-demohub = "examples.demohub:run_async"
+# wigglecam-node = "wigglecam.__main__:main"
+
+[dependency-groups]
+dev = [
+  "requests",
+  "ruff",
+  "pytest",
+  "pytest-cov",
+  "coverage[toml]",
+  "pyright",
+  "poethepoet",
+]
+
+
+# uv does not yet support [tool.pdm.scripts], so we skip this for now... https://github.com/astral-sh/uv/issues/5903
+[tool.poe.tasks]
+lint = [
+  { cmd = "uv run pyright" },
+  { cmd = "uv run ruff check" },
+  { cmd = "uv run ruff format --check" },
+]
+format = [{ cmd = "uv run ruff check --fix" }, { cmd = "uv run ruff format" }]
+test = [
+  { cmd = "pytest --basetemp=./tests_tmp/ -v ./src/tests --cov-report=term --cov-report=xml:coverage.xml --cov --durations=10" },
+]
+build = [{ cmd = "uv build wheels" }]
+
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"
+ignore = ["./experimental/", "./vendor/"]
+typeCheckingMode = "standard"
+
+
+[tool.ruff]
+line-length = 150
+extend-exclude = ["vendor"]
+
+[tool.ruff.lint]
+select = [
+  "E",  # pycodestyle
+  "W",  # pycodestyle
+  "F",  # pyflakes
+  "B",  # bugbear
+  "UP", # pyupgrade
+  "I",  # isort
+  #"D",   # pydocstyle   # add later
+]
+ignore = [
+  "B008", #used for DI injection
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+log_cli = true
+log_cli_level = "DEBUG"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+[tool.coverage.run]
+# disable couldnt-parse: https://github.com/nedbat/coveragepy/issues/1392
+disable_warnings = ["couldnt-parse"]
+omit = ["test_*.py", "./tests/*"]
+parallel = true
+concurrency = ["thread", "multiprocessing"]
+
+[build-system]
+requires = ["hatchling", "requests"]
+build-backend = "hatchling.build"
+
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rclone_client"]
+
+
+[tool.hatch.build.targets.sdist]
+packages = ["src/rclone_client"]
+
+[tool.hatch.build.hooks.custom]
+path = "build.py"

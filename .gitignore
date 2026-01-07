@@ -1,0 +1,16 @@
+# ignore user folders
+src/rclone_client/bin
+**/*experimental
+log/
+
+# python files
+__pycache__
+
+# pytest
+.coverage*
+coverage.xml
+/tests_tmp
+
+# build backends
+dist/*
+

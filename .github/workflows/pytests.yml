@@ -1,0 +1,82 @@
+name: pytest
+
+# coverage is made up by multiple runs on different hosts
+# self-hosted is a RPI and has hardware attached to test and gain high coverage
+# after all jobs finished, coverage is uploaded as described here
+# https://about.codecov.io/blog/uploading-code-coverage-in-a-separate-job-on-github-actions/
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    # env:
+      # acquisition__camera_backends__active_backend: VirtualCamera
+      # acquisition__io_backends__active_backend: VirtualIo
+
+    runs-on: ubuntu-latest
+    continue-on-error: false
+    strategy:
+      fail-fast: true
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v5
+      - name: Set up Python and uv ${{ matrix.python-version }}
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: true
+      - name: Install system apt dependencies
+        run: |
+          sudo apt update
+          sudo apt -y install libturbojpeg libcap-dev
+      - name: install the project
+        run: |
+          uv sync --all-extras --dev
+      - name: Run pytest
+        run: |
+          uv run poe test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ matrix.python-version }}
+          path: coverage.xml
+
+  tests-hardware-rpi:
+    env:
+      ## Sets environment variable
+      # use system python to allow for picamera2 to import
+      UV_PYTHON: 3.11
+      UV_PYTHON_PREFERENCE: only-system
+
+    runs-on: [self-hosted, rpi]
+    if: ${{ github.repository_owner == 'photobooth-app' }}
+
+    steps:
+      - uses: actions/checkout@v5
+      - run: uv venv --system-site-packages
+      - run: uv sync --all-extras --dev # install in-project env
+      
+      - name: Test with pytest
+        run: |
+          uv run poe test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: coverage-hardware-rpi
+          path: ./coverage.xml
+
+  upload-to-codecov:
+    needs: [tests,tests-hardware-rpi]
+    runs-on: ubuntu-latest
+    if: ${{ github.repository_owner == 'photobooth-app' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
