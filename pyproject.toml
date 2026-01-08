@@ -65,7 +65,6 @@ typeCheckingMode = "standard"
 
 [tool.ruff]
 line-length = 150
-extend-exclude = ["vendor"]
 
 [tool.ruff.lint]
 select = [

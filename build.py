@@ -97,7 +97,7 @@ def rclone_download(system: str, arch: str, rclone_version: str, out_dir: str) -
         for member in zf.filelist:
             if pathlib.Path(member.filename).name == bin_name:
                 unpacked_rclone_bin_path = pathlib.Path(zf.extract(member, temp_dir))
-                unpacked_rclone_bin_path.move(bin_path)
+                unpacked_rclone_bin_path.rename(bin_path)
 
     assert bin_path.is_file()
 
