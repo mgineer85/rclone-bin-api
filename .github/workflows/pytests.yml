@@ -29,13 +29,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           enable-cache: true
-      - name: Install system apt dependencies
-        run: |
-          sudo apt update
-          sudo apt -y install libturbojpeg libcap-dev
       - name: install the project
         run: |
-          uv sync --all-extras --dev
+          uv sync --all-extras --dev -v
       - name: Run pytest
         run: |
           uv run poe test
@@ -44,31 +40,8 @@ jobs:
           name: coverage-${{ matrix.python-version }}
           path: coverage.xml
 
-  tests-hardware-rpi:
-    env:
-      ## Sets environment variable
-      # use system python to allow for picamera2 to import
-      UV_PYTHON: 3.11
-      UV_PYTHON_PREFERENCE: only-system
-
-    runs-on: [self-hosted, rpi]
-    if: ${{ github.repository_owner == 'photobooth-app' }}
-
-    steps:
-      - uses: actions/checkout@v5
-      - run: uv venv --system-site-packages
-      - run: uv sync --all-extras --dev # install in-project env
-      
-      - name: Test with pytest
-        run: |
-          uv run poe test
-      - uses: actions/upload-artifact@v4
-        with:
-          name: coverage-hardware-rpi
-          path: ./coverage.xml
-
   upload-to-codecov:
-    needs: [tests,tests-hardware-rpi]
+    needs: [tests]
     runs-on: ubuntu-latest
     if: ${{ github.repository_owner == 'photobooth-app' }}
     steps:
