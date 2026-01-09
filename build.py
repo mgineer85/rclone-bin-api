@@ -3,7 +3,6 @@ import io
 import os
 import pathlib
 import platform
-import shutil
 import tempfile
 import zipfile
 
@@ -44,9 +43,9 @@ def _norm_sys(sys: str) -> str:
 
 
 def rclone_download(system: str, arch: str, rclone_version: str, out_dir: str) -> pathlib.Path:
-    dest = pathlib.Path(out_dir) / "src" / "rclone_client" / "bin"
+    dest = pathlib.Path(out_dir) / "src" / "rclone_client"
 
-    shutil.rmtree(dest, ignore_errors=True)
+    # shutil.rmtree(dest, ignore_errors=True)
     dest.mkdir(parents=True, exist_ok=True)
 
     base_url = f"https://downloads.rclone.org/v{rclone_version}"
@@ -92,6 +91,8 @@ def rclone_download(system: str, arch: str, rclone_version: str, out_dir: str) -
     bin_name = "rclone.exe" if system == "windows" else "rclone"
     bin_path = dest / bin_name
 
+    bin_path.unlink(missing_ok=True)
+
     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf, tempfile.TemporaryDirectory() as temp_dir:
         print(f"unpacking downloaded zipfile to {temp_dir}")
         for member in zf.filelist:
@@ -111,7 +112,7 @@ def rclone_download(system: str, arch: str, rclone_version: str, out_dir: str) -
     return bin_path
 
 
-class RcloneclientBuildHook(BuildHookInterface):
+class CustomBuildHook(BuildHookInterface):
     def initialize(self, version, build_data):
         rclone_version = os.environ.get("BUILD_RCLONE_VERSION", "1.72.1")
         system = os.environ.get("BUILD_SYSTEM", _norm_sys(platform.system()))

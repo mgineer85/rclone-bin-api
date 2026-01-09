@@ -39,6 +39,7 @@ dev = [
   "coverage[toml]",
   "pyright",
   "poethepoet",
+  "hatch",
 ]
 
 

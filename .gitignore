@@ -1,5 +1,6 @@
 # ignore user folders
-src/rclone_client/bin
+src/rclone_client/rclone
+src/rclone_client/bin/
 **/*experimental
 log/
 
