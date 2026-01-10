@@ -3,14 +3,15 @@ import io
 import os
 import pathlib
 import platform
-import tempfile
 import zipfile
 
 import requests
-from hatchling.builders.hooks.plugin.interface import BuildHookInterface  # type: ignore
+from setuptools import setup
+from setuptools.command.build_py import build_py
+from wheel.bdist_wheel import bdist_wheel
 
-SYS_SET = {"windows", "linux", "osx"}
-ARCH_SET = {"amd64", "arm64"}
+SYS_SET = {"windows", "linux", "darwin"}
+ARCH_SET = {"x86_64", "amd64", "aarch64"}
 
 ARCH_MAP = {
     "x86_64": "amd64",
@@ -42,9 +43,20 @@ def _norm_sys(sys: str) -> str:
         raise OSError(f"{sys} is not supported.") from None
 
 
-def rclone_download(system: str, arch: str, rclone_version: str, out_dir: str) -> pathlib.Path:
-    dest = pathlib.Path(out_dir) / "src" / "rclone_client"
+rclone_version = os.environ.get("BUILD_RCLONE_VERSION", "1.72.1")
+system = os.environ.get("BUILD_SYSTEM", platform.system()).lower()
+arch = os.environ.get("BUILD_ARCH", platform.machine()).lower()
+system_rclone_bin = _norm_sys(system)
+arch_rclone_bin = _norm_arch(arch)
 
+if system_rclone_bin not in SYS_SET:
+    raise RuntimeError(f"Invalid system: {system_rclone_bin}, must be {SYS_SET}")
+
+if arch_rclone_bin not in ARCH_SET:
+    raise RuntimeError(f"Invalid arch: {arch_rclone_bin}, must be {ARCH_SET}")
+
+
+def rclone_download(system: str, arch: str, rclone_version: str, dest: pathlib.Path) -> pathlib.Path:
     # shutil.rmtree(dest, ignore_errors=True)
     dest.mkdir(parents=True, exist_ok=True)
 
@@ -93,12 +105,11 @@ def rclone_download(system: str, arch: str, rclone_version: str, out_dir: str) -
 
     bin_path.unlink(missing_ok=True)
 
-    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf, tempfile.TemporaryDirectory() as temp_dir:
-        print(f"unpacking downloaded zipfile to {temp_dir}")
+    with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
         for member in zf.filelist:
             if pathlib.Path(member.filename).name == bin_name:
-                unpacked_rclone_bin_path = pathlib.Path(zf.extract(member, temp_dir))
-                unpacked_rclone_bin_path.rename(bin_path)
+                data = zf.read(member)
+                bin_path.write_bytes(data)
 
     assert bin_path.is_file()
 
@@ -112,20 +123,40 @@ def rclone_download(system: str, arch: str, rclone_version: str, out_dir: str) -
     return bin_path
 
 
-class CustomBuildHook(BuildHookInterface):
-    def initialize(self, version, build_data):
-        rclone_version = os.environ.get("BUILD_RCLONE_VERSION", "1.72.1")
-        system = os.environ.get("BUILD_SYSTEM", _norm_sys(platform.system()))
-        arch = os.environ.get("BUILD_ARCH", _norm_arch(platform.machine()))
+class BuildWithRclone(build_py):
+    def run(self):
+        # 1. Run normal build first (creates build_lib)
+        super().run()
 
-        if system not in SYS_SET:
-            raise RuntimeError(f"Invalid system: {system}")
+        # 2. Determine where to place the binary inside the wheel
+        if self.editable_mode:
+            print("editable installation!")
+            pkg_dir = pathlib.Path("src/rclone_client/bin")
 
-        if arch not in ARCH_SET:
-            raise RuntimeError(f"Invalid arch: {arch}")
+            bin_name = "rclone.exe" if platform.system() == "Windows" else "rclone"
+            if pkg_dir.joinpath(bin_name).exists():
+                print("not downloading rclone as it already exists.")
+                return
+        else:
+            pkg_dir = pathlib.Path(self.build_lib) / "rclone_client" / "bin"
 
-        print(f"Downloading binary for {system}_{arch}")
-        rclone_download(system, arch, rclone_version, self.root)
+        print(pkg_dir)
+        print()
 
+        # 3. Download rclone
+        print(f"Downloading binary for {system_rclone_bin}_{arch_rclone_bin}")
+        rclone_download(system_rclone_bin, arch_rclone_bin, rclone_version, pkg_dir)
+
+
+class PlatformWheel(bdist_wheel):
+    def get_tag(self):
         # Override wheel tag
-        build_data["tag"] = f"py3-none-{system}_{arch}"
+        return ("py3", "none", f"{system}_{arch}")
+
+
+setup(
+    cmdclass={
+        "build_py": BuildWithRclone,
+        "bdist_wheel": PlatformWheel,
+    },
+)

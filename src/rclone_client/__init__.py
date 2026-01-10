@@ -6,6 +6,6 @@ bin_name = "rclone.exe" if platform.system() == "Windows" else "rclone"
 rclone = bin_dir / bin_name
 
 if not rclone.is_file():
-    raise RuntimeError("rclone binary missing in non-editable install")
+    raise RuntimeError("rclone binary missing!")
 
 BINARY_PATH = rclone.absolute()
