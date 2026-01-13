@@ -1,6 +1,6 @@
 
 [project]
-name = "rclone-client-bin"
+name = "rclone-bin-client"
 description = "Rclone client including the binaries."
 version = "0.0.1"
 authors = [{ name = "Michael G", email = "me@mgineer85.de" }]
