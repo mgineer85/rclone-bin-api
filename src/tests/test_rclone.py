@@ -29,7 +29,7 @@ def _wait_op(client: RcloneClient):
 
 @pytest.fixture()
 def _rclone_fixture() -> Generator[RcloneFixture, None, None]:
-    client = RcloneClient("localhost:5573")
+    client = RcloneClient("localhost:5573", log_file=Path("./log/rclone.log"))
 
     client.start()
 

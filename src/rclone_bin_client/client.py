@@ -4,7 +4,7 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from . import BINARY_PATH
 from .dto import AsyncJobResponse, ConfigListremotes, CoreStats, CoreVersion, JobList, JobStatus, LsJsonEntry, PubliclinkResponse
@@ -15,13 +15,15 @@ class RcloneClient:
     def __init__(
         self,
         bind="localhost:5572",
-        log_level: str = "NOTICE",
+        log_file: Path | None = None,
+        log_level: Literal["DEBUG", "INFO", "NOTICE", "ERROR"] = "NOTICE",
         transfers: int = 4,
         checkers: int = 4,
         enable_webui: bool = False,
         bwlimit: str | None = None,
     ):
         self.__bind_addr = bind
+        self.__log_file = log_file
         self.__log_level = log_level
         self.__transfers = transfers
         self.__checkers = checkers
@@ -38,8 +40,8 @@ class RcloneClient:
         if self.__process:
             return
 
-        logfile = Path("log/rclone.log")
-        logfile.parent.mkdir(parents=True, exist_ok=True)
+        if self.__log_file:
+            self.__log_file.parent.mkdir(parents=True, exist_ok=True)
 
         self.__process = subprocess.Popen(
             [
@@ -53,7 +55,7 @@ class RcloneClient:
                 # The connections could be limited, but it could cause deadlocks, so it's preferred to change transfers/checkers only
                 f"--transfers={self.__transfers}",
                 f"--checkers={self.__checkers}",
-                f"--log-file={logfile}",
+                *([f"--log-file={self.__log_file}"] if self.__log_file else []),
                 f"--log-level={self.__log_level}",
                 *([f"--bwlimit={self.__bwlimit}"] if self.__bwlimit else []),
             ]
@@ -99,7 +101,6 @@ class RcloneClient:
             response_json = json.loads(raw.decode("utf-8"))
             raise RcloneProcessException.from_dict(response_json) from exc
         except Exception as exc:  # all other errors
-            print(exc)
             raise RcloneConnectionException(f"Issue connecting to rclone RC server, error: {exc}") from exc
         else:
             return response_json
