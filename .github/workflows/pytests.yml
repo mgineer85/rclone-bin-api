@@ -21,7 +21,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v5
       - name: Set up Python and uv ${{ matrix.python-version }}
@@ -43,7 +43,7 @@ jobs:
   upload-to-codecov:
     needs: [tests]
     runs-on: ubuntu-latest
-    if: ${{ github.repository_owner == 'photobooth-app' }}
+    if: ${{ github.repository_owner == 'mgineer85' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
