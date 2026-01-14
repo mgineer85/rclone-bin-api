@@ -1,4 +1,7 @@
+import atexit
 import json
+import os
+import signal
 import subprocess
 import time
 import urllib.error
@@ -33,10 +36,12 @@ class RcloneClient:
         self.__process = None
         self.__rclone_bin = BINARY_PATH
 
+        atexit.register(self._cleanup)
+
     # -------------------------
     # Lifecycle
     # -------------------------
-    def start(self):
+    def start(self, startup_timeout: float | None = 5):
         if self.__process:
             return
 
@@ -58,10 +63,36 @@ class RcloneClient:
                 *([f"--log-file={self.__log_file}"] if self.__log_file else []),
                 f"--log-level={self.__log_level}",
                 *([f"--bwlimit={self.__bwlimit}"] if self.__bwlimit else []),
-            ]
+            ],
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,  # for _cleanup
         )
         # during dev you might want to start on cli separately:
         # rclone rcd --rc-no-auth --rc-addr=localhost:5572 --rc-web-gui --transfers=4 --checkers=4 --bwlimit=5K
+
+        if startup_timeout:
+            self.wait_until_operational(startup_timeout)
+
+    def wait_until_operational(self, timeout: float = 5) -> None:
+        assert self.__process
+        assert self.__process.stderr  # enable PIPE in subprocess
+
+        deadline = time.time() + timeout
+
+        while time.time() < deadline:
+            # If rclone died immediately, capture stderr and raise
+            ret = self.__process.poll()
+            if ret is not None:
+                stderr = self.__process.stderr.read()
+                raise RuntimeError(f"rclone failed to start (exit={ret}): {stderr.strip()}")
+
+            if ret is None and self.operational():
+                return
+
+            time.sleep(0.1)
+
+        raise RuntimeError(f"rclone did not become operational after {timeout}s")
 
     def stop(self):
         if self.__process:
@@ -69,6 +100,11 @@ class RcloneClient:
             self.__process.wait(timeout=5)
 
             self.__process = None
+
+    def _cleanup(self):
+        # if forgot to call stop, we still kill a possible rclone instance at py program exit.
+        if self.__process and self.__process.poll() is None:
+            os.killpg(self.__process.pid, signal.SIGTERM)
 
     # -------------------------
     # Internal helper

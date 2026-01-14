@@ -19,21 +19,11 @@ class RcloneFixture:
     remote_name: str
 
 
-def _wait_op(client: RcloneClient):
-    abort_counter = 0
-    while not client.operational():
-        time.sleep(0.1)
-        abort_counter += 1
-        assert abort_counter < 50, "rclone not getting operational, aborting!"
-
-
 @pytest.fixture()
 def _rclone_fixture() -> Generator[RcloneFixture, None, None]:
     client = RcloneClient("localhost:5573", log_file=Path("./log/rclone.log"))
 
     client.start()
-
-    _wait_op(client)
 
     # create local remote for testing
     remote_name = uuid4().hex
@@ -51,7 +41,6 @@ def test_operational():
     assert ins.operational() is False
 
     ins.start()
-    _wait_op(ins)
 
     assert ins.operational() is True
 
@@ -60,6 +49,37 @@ def test_operational():
     ins.stop()
 
     assert ins.operational() is False
+
+
+def test_transfers_status_request(tmp_path: Path):
+    ins = RcloneClient("localhost:5573", bwlimit="5M")
+    ins.start()
+
+    dummy_local = tmp_path / "in" / "file1.txt"
+    dummy_local.parent.mkdir(parents=True)
+    dummy_local.write_bytes(b"0" * 1024 * 1024)
+
+    dummy_local_remote = Path(tmp_path / "out" / "file1.txt").absolute()
+
+    assert len(ins.core_stats().transferring) == 0
+
+    # queue the copy
+    job = ins.copyfile_async(str(dummy_local.parent), dummy_local.name, str(dummy_local_remote.parent), dummy_local_remote.name)
+
+    while len(ins.core_stats().transferring) == 0:
+        # wait until actually transferring
+        time.sleep(0.1)
+
+    # ensure the filename is part of the transfer queue
+    assert dummy_local.name in ins.core_stats().transferring[0].name
+
+    ins.wait_for_jobs([job.jobid])
+
+    final_status = ins.job_status(jobid=job.jobid)
+
+    assert final_status.success
+
+    ins.stop()
 
 
 def test_version(_rclone_fixture: RcloneFixture):

@@ -200,15 +200,6 @@ class LsJsonEntry:
 
 
 @dataclass(slots=True)
-class LsJsonResponse:
-    entries: list[LsJsonEntry]
-
-    @staticmethod
-    def from_list(items: list[dict[str, Any]]):
-        return LsJsonResponse(entries=[LsJsonEntry.from_dict(x) for x in items])
-
-
-@dataclass(slots=True)
 class PubliclinkResponse:
     link: str
 
