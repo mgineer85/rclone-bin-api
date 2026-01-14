@@ -2,6 +2,7 @@ import hashlib
 import io
 import os
 import pathlib
+import shutil
 import zipfile
 
 import requests
@@ -10,8 +11,8 @@ from setuptools import setup
 from setuptools.command.build_py import build_py
 from wheel.bdist_wheel import bdist_wheel
 
-rclone_version = os.environ.get("BUILD_RCLONE_VERSION", "1.72.1")
-
+rclone_version = os.environ.get("RCLONE_VERSION", "1.72.1")
+rclone_build_platform = os.environ.get("RCLONE_BUILD_PLATFORM", None)
 
 PLATFORMS = {
     # (pypa platform tag) -> (rclone variant)
@@ -41,7 +42,7 @@ def detect_supported_platform_tag():
 
 
 def rclone_download(system: str, arch: str, rclone_version: str, dest: pathlib.Path) -> pathlib.Path:
-    # shutil.rmtree(dest, ignore_errors=True)
+    shutil.rmtree(dest, ignore_errors=True)  # ensure clean bin dir, because build dir might be reused.
     dest.mkdir(parents=True, exist_ok=True)
 
     base_url = f"https://downloads.rclone.org/v{rclone_version}"
@@ -50,8 +51,6 @@ def rclone_download(system: str, arch: str, rclone_version: str, dest: pathlib.P
     sums_url = f"{base_url}/SHA256SUMS"
 
     print(f"Downloading rclone from {url}")
-    # with urllib.request.urlopen(url) as r, open(dest, "wb") as f:
-    #     shutil.copyfileobj(r, f)
 
     req_session = requests.Session()
     resp = req_session.get(url)
@@ -111,7 +110,7 @@ def rclone_download(system: str, arch: str, rclone_version: str, dest: pathlib.P
 class BuildWithRclone(build_py):
     def initialize_options(self):
         super().initialize_options()
-        self.platform_tag = os.environ.get("BUILD_PLATFORM") or detect_supported_platform_tag()
+        self.platform_tag = rclone_build_platform or detect_supported_platform_tag()
 
     def run(self):
         # 1. Run normal build first (creates build_lib)
@@ -142,7 +141,7 @@ class BuildWithRclone(build_py):
 class PlatformWheel(bdist_wheel):
     def initialize_options(self):
         super().initialize_options()
-        self.platform_tag = os.environ.get("BUILD_PLATFORM") or detect_supported_platform_tag()
+        self.platform_tag = rclone_build_platform or detect_supported_platform_tag()
 
     def get_tag(self):
         return ("py3", "none", self.platform_tag)
