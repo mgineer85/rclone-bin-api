@@ -2,58 +2,42 @@ import hashlib
 import io
 import os
 import pathlib
-import platform
 import zipfile
 
 import requests
+from packaging.tags import sys_tags
 from setuptools import setup
 from setuptools.command.build_py import build_py
 from wheel.bdist_wheel import bdist_wheel
 
-SYS_SET = {"windows", "linux", "darwin"}
-ARCH_SET = {"x86_64", "amd64", "aarch64"}
-
-ARCH_MAP = {
-    "x86_64": "amd64",
-    "amd64": "amd64",
-    "aarch64": "arm64",
-    "arm64": "arm64",
-}
-
-SYS_MAP = {
-    "windows": "windows",
-    "linux": "linux",
-    "darwin": "osx",
-}
-
-
-def _norm_arch(arch: str) -> str:
-    key = arch.lower()
-    try:
-        return ARCH_MAP[key]
-    except KeyError:
-        raise OSError(f"{arch} is not supported.") from None
-
-
-def _norm_sys(sys: str) -> str:
-    key = sys.lower()
-    try:
-        return SYS_MAP[key]
-    except KeyError:
-        raise OSError(f"{sys} is not supported.") from None
-
-
 rclone_version = os.environ.get("BUILD_RCLONE_VERSION", "1.72.1")
-system = os.environ.get("BUILD_SYSTEM", platform.system()).lower()
-arch = os.environ.get("BUILD_ARCH", platform.machine()).lower()
-system_rclone_bin = _norm_sys(system)
-arch_rclone_bin = _norm_arch(arch)
 
-if system_rclone_bin not in SYS_SET:
-    raise RuntimeError(f"Invalid system: {system_rclone_bin}, must be {SYS_SET}")
 
-if arch_rclone_bin not in ARCH_SET:
-    raise RuntimeError(f"Invalid arch: {arch_rclone_bin}, must be {ARCH_SET}")
+PLATFORMS = {
+    # (pypa platform tag) -> (rclone variant)
+    "win_amd64": ("windows", "amd64"),
+    "win_arm64": ("windows", "arm64"),
+    "manylinux_2_28_x86_64": ("linux", "amd64"),
+    "manylinux_2_28_aarch64": ("linux", "arm64"),
+    "macosx_10_9_x86_64": ("osx", "amd64"),
+    "macosx_11_0_arm64": ("osx", "arm64"),
+}
+
+
+def get_rclone_variant(platform_tag: str):
+    try:
+        return PLATFORMS[platform_tag]
+    except KeyError:
+        raise RuntimeError(f"Unsupported platform tag '{platform_tag}'. Supported: {sorted(PLATFORMS)}") from None
+
+
+def detect_supported_platform_tag():
+    """Return the first sys_tags() platform that we explicitly support."""
+    for tag in sys_tags():
+        if tag.platform in PLATFORMS:
+            return tag.platform
+
+    raise RuntimeError(f"No supported platform tag found for this interpreter. Supported: {sorted(PLATFORMS)}")
 
 
 def rclone_download(system: str, arch: str, rclone_version: str, dest: pathlib.Path) -> pathlib.Path:
@@ -110,8 +94,9 @@ def rclone_download(system: str, arch: str, rclone_version: str, dest: pathlib.P
             if pathlib.Path(member.filename).name == bin_name:
                 data = zf.read(member)
                 bin_path.write_bytes(data)
+                break
 
-    assert bin_path.is_file()
+    assert bin_path.is_file(), f"Binary '{bin_name}' not found inside rclone archive {filename}"
 
     print(f"unpacked rclone to {bin_path}")
 
@@ -124,16 +109,22 @@ def rclone_download(system: str, arch: str, rclone_version: str, dest: pathlib.P
 
 
 class BuildWithRclone(build_py):
+    def initialize_options(self):
+        super().initialize_options()
+        self.platform_tag = os.environ.get("BUILD_PLATFORM") or detect_supported_platform_tag()
+
     def run(self):
         # 1. Run normal build first (creates build_lib)
         super().run()
 
+        rclone_sys, rclone_arch = get_rclone_variant(self.platform_tag)
+
         # 2. Determine where to place the binary inside the wheel
         if self.editable_mode:
             print("editable installation!")
-            pkg_dir = pathlib.Path("src/rclone_bin_client/bin")
+            pkg_dir = pathlib.Path(self.get_package_dir("rclone_bin_client")) / "bin"
 
-            bin_name = "rclone.exe" if platform.system() == "Windows" else "rclone"
+            bin_name = "rclone.exe" if rclone_sys == "windows" else "rclone"
             if pkg_dir.joinpath(bin_name).exists():
                 print("not downloading rclone as it already exists.")
                 return
@@ -141,17 +132,20 @@ class BuildWithRclone(build_py):
             pkg_dir = pathlib.Path(self.build_lib) / "rclone_bin_client/bin"
 
         print(pkg_dir)
-        print()
 
         # 3. Download rclone
-        print(f"Downloading binary for {system_rclone_bin}_{arch_rclone_bin}")
-        rclone_download(system_rclone_bin, arch_rclone_bin, rclone_version, pkg_dir)
+
+        print(f"Downloading binary for {rclone_sys}_{rclone_arch}")
+        rclone_download(rclone_sys, rclone_arch, rclone_version, pkg_dir)
 
 
 class PlatformWheel(bdist_wheel):
+    def initialize_options(self):
+        super().initialize_options()
+        self.platform_tag = os.environ.get("BUILD_PLATFORM") or detect_supported_platform_tag()
+
     def get_tag(self):
-        # Override wheel tag
-        return ("py3", "none", f"{system}_{arch}")
+        return ("py3", "none", self.platform_tag)
 
 
 setup(
