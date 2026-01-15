@@ -7,21 +7,21 @@ from uuid import uuid4
 
 import pytest
 
-from rclone_bin_client.client import RcloneClient
-from rclone_bin_client.exceptions import RcloneProcessException
+from rclone_api.api import RcloneApi
+from rclone_api.exceptions import RcloneProcessException
 
 logger = logging.getLogger(name=None)
 
 
 @dataclass
 class RcloneFixture:
-    client: RcloneClient
+    client: RcloneApi
     remote_name: str
 
 
 @pytest.fixture()
 def _rclone_fixture() -> Generator[RcloneFixture, None, None]:
-    client = RcloneClient("localhost:5573", log_file=Path("./log/rclone.log"))
+    client = RcloneApi("localhost:5573", log_file=Path("./log/rclone.log"))
 
     client.start()
 
@@ -37,7 +37,7 @@ def _rclone_fixture() -> Generator[RcloneFixture, None, None]:
 
 
 def test_operational():
-    ins = RcloneClient("localhost:5573")
+    ins = RcloneApi("localhost:5573")
     assert ins.operational() is False
 
     ins.start()
@@ -52,7 +52,7 @@ def test_operational():
 
 
 def test_transfers_status_request(tmp_path: Path):
-    ins = RcloneClient("localhost:5573", bwlimit="5M")
+    ins = RcloneApi("localhost:5573", bwlimit="5M")
     ins.start()
 
     dummy_local = tmp_path / "in" / "file1.txt"

@@ -1,4 +1,4 @@
-from rclone_bin_client.exceptions import RcloneProcessException
+from rclone_api.exceptions import RcloneProcessException
 
 
 def test_rclone_process_exception_str():

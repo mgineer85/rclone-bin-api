@@ -1,7 +1,7 @@
-from rclone_bin_client.client import RcloneClient
+from rclone_api.api import RcloneApi
 
 if __name__ == "__main__":
-    rc = RcloneClient()
+    rc = RcloneApi()
     rc.start()
 
     print(rc.version())

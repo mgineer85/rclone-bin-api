@@ -1,5 +1,5 @@
-src/rclone_bin_client/rclone
-src/rclone_bin_client/bin/
+src/rclone_api/rclone
+src/rclone_api/bin/
 **/*experimental
 log/
 

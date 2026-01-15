@@ -19,7 +19,7 @@ jobs:
     if: ${{ github.repository_owner == 'mgineer85' && github.triggering_actor != 'dependabot[bot]' }}
     environment:
       name: pypi
-      url: https://pypi.org/p/rclone-bin-client
+      url: https://pypi.org/p/rclone-bin-api
     permissions:
       id-token: write # IMPORTANT: this permission is mandatory for trusted publishing
     steps:

@@ -1,7 +1,7 @@
 
 [project]
-name = "rclone-bin-client"
-description = "Rclone client including the binaries."
+name = "rclone-bin-api"
+description = "Rclone API for Python including the Rclone binaries."
 version = "1.0.0"
 authors = [{ name = "Michael G", email = "me@mgineer85.de" }]
 maintainers = [{ name = "Michael G", email = "me@mgineer85.de" }]
@@ -22,8 +22,7 @@ dependencies = []
 
 
 [project.urls]
-homepage = "https://github.com/mgineer85/rclone-bin-client"
-repository = "https://github.com/mgineer85/rclone-bin-client"
+Repository = "https://github.com/mgineer85/rclone-bin-api"
 
 [dependency-groups]
 dev = [

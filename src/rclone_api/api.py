@@ -14,7 +14,7 @@ from .dto import AsyncJobResponse, ConfigListremotes, CoreStats, CoreVersion, Jo
 from .exceptions import RcloneConnectionException, RcloneProcessException
 
 
-class RcloneClient:
+class RcloneApi:
     def __init__(
         self,
         bind="localhost:5572",

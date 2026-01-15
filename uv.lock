@@ -269,7 +269,7 @@ wheels = [
 ]
 
 [[package]]
-name = "rclone-bin-client"
+name = "rclone-bin-api"
 version = "1.0.0"
 source = { editable = "." }
 
