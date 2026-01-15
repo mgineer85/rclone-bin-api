@@ -75,16 +75,17 @@ class RcloneApi:
             self.wait_until_operational(startup_timeout)
 
     def wait_until_operational(self, timeout: float = 5) -> None:
-        assert self.__process
-        assert self.__process.stderr  # enable PIPE in subprocess
-
         deadline = time.time() + timeout
 
         while time.time() < deadline:
+            if not self.__process:
+                # maybe instance created already but code using the api did not start yet.
+                continue
+
             # If rclone died immediately, capture stderr and raise
             ret = self.__process.poll()
             if ret is not None:
-                stderr = self.__process.stderr.read()
+                stderr = self.__process.stderr.read()  # type: ignore
                 raise RuntimeError(f"rclone failed to start (exit={ret}): {stderr.strip()}")
 
             if ret is None and self.operational():
