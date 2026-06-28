@@ -1,8 +1,8 @@
 import atexit
 import json
-import os
-import signal
+import logging
 import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
@@ -13,11 +13,14 @@ from . import BINARY_PATH
 from .dto import AsyncJobResponse, ConfigListremotes, CoreStats, CoreVersion, JobList, JobStatus, LsJsonEntry, PubliclinkResponse
 from .exceptions import RcloneConnectionException, RcloneProcessException, RclonePublicLinkNotSupportedException
 
+logger = logging.getLogger(name="rclone_api")
+
 
 class RcloneApi:
     def __init__(
         self,
-        bind="localhost:5572",
+        bind="127.0.0.1:5572",  # bind to IPv4 127.0.0.1 until https://github.com/rclone/rclone-web/issues/71 is resolved
+        bind_gui="127.0.0.1:5573",  # bind to IPv4 127.0.0.1 until https://github.com/rclone/rclone-web/issues/71 is resolved
         log_file: Path | None = None,
         log_level: Literal["DEBUG", "INFO", "NOTICE", "ERROR"] = "NOTICE",
         transfers: int = 4,
@@ -27,6 +30,7 @@ class RcloneApi:
         config_file: Path | None = None,
     ):
         self.__bind_addr = bind
+        self.__bind_addr_gui = bind_gui
         self.__log_file = log_file
         self.__log_level = log_level
         self.__transfers = transfers
@@ -38,78 +42,99 @@ class RcloneApi:
         self.__connect_addr = f"http://{bind}"
         self.__process = None
         self.__rclone_bin = BINARY_PATH
+        self.__startstop_lock = threading.Lock()
 
-        atexit.register(self._cleanup)
+        atexit.register(self.stop)
 
     # -------------------------
     # Lifecycle
     # -------------------------
     def start(self, startup_timeout: float | None = 5):
-        if self.__process:
-            return
+        with self.__startstop_lock:
+            if self.__process:
+                logger.info("RcloneApi already started a rclone instance - skipping.")
+                return
 
-        if self.__log_file:
-            self.__log_file.parent.mkdir(parents=True, exist_ok=True)
+            if self.__log_file:
+                logger.debug(f"rclone logging to file {self.__log_file}, setting log level {self.__log_level}")
+                self.__log_file.parent.mkdir(parents=True, exist_ok=True)
 
-        self.__process = subprocess.Popen(
-            [
-                str(self.__rclone_bin),
-                "rcd",
-                *([f"--config={self.__config_file}"] if self.__config_file else []),
-                f"--rc-addr={self.__bind_addr}",
-                "--rc-no-auth",  # TODO: add auth.
-                *(["--rc-web-gui"] if self.__enable_webui else []),
-                "--rc-web-gui-no-open-browser",
-                # The server needs to accept at least transfers+checkers connections, otherwise sync might fail!
-                # The connections could be limited, but it could cause deadlocks, so it's preferred to change transfers/checkers only
-                f"--transfers={self.__transfers}",
-                f"--checkers={self.__checkers}",
-                *([f"--log-file={self.__log_file}"] if self.__log_file else []),
-                f"--log-level={self.__log_level}",
-                *([f"--bwlimit={self.__bwlimit}"] if self.__bwlimit else []),
-            ],
-            stderr=subprocess.PIPE,
-            text=True,
-            start_new_session=True,  # for _cleanup
-        )
-        # during dev you might want to start on cli separately:
-        # rclone rcd --rc-no-auth --rc-addr=localhost:5572 --rc-web-gui --transfers=4 --checkers=4 --bwlimit=5K
+            # since rclone 1.74.0 a new built-in webgui is avail.
+            # start using gui to enable the gui, otherwise only rcd which just exposes the api
+            if self.__enable_webui:
+                logger.info("starting rclone with gui enabled")
+                rc_cmd = "gui"
+                rc_cmd_args = [
+                    "--rc-no-auth",
+                    "--no-open-browser",
+                    f"--api-addr={self.__bind_addr}",
+                    f"--addr={self.__bind_addr_gui}",
+                ]
+            else:
+                logger.info("starting rclone with remote command daemon (api only, no gui)")
+                rc_cmd = "rcd"
+                rc_cmd_args = [
+                    "--rc-no-auth",
+                    f"--rc-addr={self.__bind_addr}",
+                ]
+
+            self.__process = subprocess.Popen(
+                [
+                    str(self.__rclone_bin),
+                    rc_cmd,
+                    *rc_cmd_args,
+                    *([f"--config={self.__config_file}"] if self.__config_file else []),
+                    *([f"--log-file={self.__log_file}"] if self.__log_file else []),
+                    f"--log-level={self.__log_level}",
+                    # The server needs to accept at least transfers+checkers connections, otherwise sync might fail!
+                    # The connections could be limited, but it could cause deadlocks, so it's preferred to change transfers/checkers only
+                    f"--transfers={self.__transfers}",
+                    f"--checkers={self.__checkers}",
+                    *([f"--bwlimit={self.__bwlimit}"] if self.__bwlimit else []),
+                ],
+                stderr=subprocess.PIPE,
+                text=True,
+                start_new_session=True,  # for _cleanup
+            )
+
+            logger.info(f"rclone started, cmd={' '.join(self.__process.args)}")  # type: ignore
+
+            # during dev you might want to start on cli separately:
+            # rclone rcd --rc-no-auth --rc-addr=localhost:5572 --rc-web-gui --transfers=4 --checkers=4 --bwlimit=5K
 
         if startup_timeout:
             self.wait_until_operational(startup_timeout)
+            logger.info("rclone is operational now")
 
     def wait_until_operational(self, timeout: float = 5) -> None:
-        deadline = time.time() + timeout
-
-        while time.time() < deadline:
+        with self.__startstop_lock:
             if not self.__process:
-                # maybe instance created already but code using the api did not start yet.
-                continue
-
-            # If rclone died immediately, capture stderr and raise
-            ret = self.__process.poll()
-            if ret is not None:
-                stderr = self.__process.stderr.read()  # type: ignore
-                raise RuntimeError(f"rclone failed to start (exit={ret}): {stderr.strip()}")
-
-            if ret is None and self.operational():
+                logger.error("cannot wait for rclone being operational while not started before")
                 return
 
-            time.sleep(0.1)
+            deadline = time.time() + timeout
 
-        raise RuntimeError(f"rclone did not become operational after {timeout}s")
+            while time.time() < deadline:
+                # If rclone died immediately, capture stderr and raise
+                ret = self.__process.poll()
+                if ret is not None:
+                    stderr = self.__process.stderr.read()  # type: ignore
+                    raise RuntimeError(f"rclone failed to start (exit={ret}): {stderr.strip()}")
+
+                if ret is None and self.operational():
+                    return
+
+                time.sleep(0.1)
+
+            raise RuntimeError(f"rclone did not become operational after {timeout}s")
 
     def stop(self):
-        if self.__process:
-            self.__process.terminate()
-            self.__process.wait(timeout=5)
+        with self.__startstop_lock:
+            if self.__process:
+                self.__process.terminate()
+                self.__process.wait(timeout=5)
 
-            self.__process = None
-
-    def _cleanup(self):
-        # if forgot to call stop, we still kill a possible rclone instance at py program exit.
-        if self.__process and self.__process.poll() is None:
-            os.killpg(self.__process.pid, signal.SIGTERM)
+                self.__process = None
 
     # -------------------------
     # Internal helper

@@ -5,8 +5,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
+import psutil
 import pytest
+import requests
 
+from rclone_api import BINARY_PATH
 from rclone_api.api import RcloneApi
 from rclone_api.exceptions import RcloneProcessException
 
@@ -21,7 +24,10 @@ class RcloneFixture:
 
 @pytest.fixture()
 def _rclone_fixture() -> Generator[RcloneFixture, None, None]:
-    client = RcloneApi("localhost:5573", log_file=Path("./log/rclone.log"))
+    # ensure no instance running prior testrun (also no other instances in separate terminals)
+    assert BINARY_PATH.name not in (p.name() for p in psutil.process_iter())
+
+    client = RcloneApi("127.0.0.1:5582", log_file=Path("./log/rclone.log"))
 
     client.start()
 
@@ -37,22 +43,39 @@ def _rclone_fixture() -> Generator[RcloneFixture, None, None]:
 
 
 def test_operational():
-    ins = RcloneApi("localhost:5573")
+    ins = RcloneApi("127.0.0.1:5582", log_file=Path("./log/rclone.log"))
     assert ins.operational() is False
 
     ins.start()
-
+    assert BINARY_PATH.name in (p.name() for p in psutil.process_iter())
     assert ins.operational() is True
 
     ins.start()  # ensure second start doesn't break everything...
+    assert BINARY_PATH.name in (p.name() for p in psutil.process_iter())
 
     ins.stop()
+    assert BINARY_PATH.name not in (p.name() for p in psutil.process_iter())
+    assert ins.operational() is False
 
+
+def test_operational_gui():
+    ins = RcloneApi("127.0.0.1:5582", "127.0.0.1:5583", enable_webui=True, log_file=Path("./log/rclone.log"))
+    assert ins.operational() is False
+
+    ins.start()
+    assert BINARY_PATH.name in (p.name() for p in psutil.process_iter())
+    assert ins.operational() is True
+
+    res = requests.get(url="http://localhost:5583")
+    assert res.ok
+
+    ins.stop()
+    assert BINARY_PATH.name not in (p.name() for p in psutil.process_iter())
     assert ins.operational() is False
 
 
 def test_transfers_status_request(tmp_path: Path):
-    ins = RcloneApi("localhost:5573", bwlimit="5M")
+    ins = RcloneApi("127.0.0.1:5582", bwlimit="0.5M", log_file=Path("./log/rclone.log"))
     ins.start()
 
     dummy_local = tmp_path / "in" / "file1.txt"
@@ -66,8 +89,11 @@ def test_transfers_status_request(tmp_path: Path):
     # queue the copy
     job = ins.copyfile_async(str(dummy_local.parent), dummy_local.name, str(dummy_local_remote.parent), dummy_local_remote.name)
 
+    abort_counter = 100
     while len(ins.core_stats().transferring) == 0:
         # wait until actually transferring
+        abort_counter -= 1
+        assert abort_counter > 0, "abort because test got stuck! this could happen if another rclone instance was started on the test port"
         time.sleep(0.1)
 
     # ensure the filename is part of the transfer queue
