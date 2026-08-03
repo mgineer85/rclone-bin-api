@@ -161,12 +161,12 @@ class RcloneApi:
 
         try:
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                raw: bytes = resp.read()
-                response_json = json.loads(raw.decode("utf-8"))
+                raw_resp: bytes = resp.read()
+                response_json = json.loads(raw_resp.decode("utf-8"))
 
         except urllib.error.HTTPError as exc:  # non 200 HTTP codes
-            raw: bytes = exc.read()
-            response_json = json.loads(raw.decode("utf-8"))
+            raw_exc: bytes = exc.read()
+            response_json = json.loads(raw_exc.decode("utf-8"))
             raise RcloneProcessException.from_dict(response_json) from exc
         except TimeoutError as exc:
             raise RcloneConnectionException(f"Operation timed out after {TIMEOUT}s. To copy large files consider using _async methods.") from exc

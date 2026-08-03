@@ -30,7 +30,7 @@ dev = [
   "pytest",
   "pytest-cov",
   "coverage[toml]",
-  "pyright",
+  "basedpyright",
   "poethepoet",
   "setuptools",
   "wheel",
@@ -42,7 +42,7 @@ dev = [
 # uv does not yet support [tool.pdm.scripts], so we skip this for now... https://github.com/astral-sh/uv/issues/5903
 [tool.poe.tasks]
 lint = [
-  { cmd = "uv run pyright" },
+  { cmd = "uv run basedpyright" },
   { cmd = "uv run ruff check" },
   { cmd = "uv run ruff format --check" },
 ]
@@ -61,7 +61,7 @@ build = [
 ]
 
 
-[tool.pyright]
+[tool.basedpyright]
 venvPath = "."
 venv = ".venv"
 ignore = ["./experimental/", "./vendor/"]
