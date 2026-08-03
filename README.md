@@ -24,7 +24,7 @@ from rclone_api.api import RcloneApi
 api = RcloneApi()
 api.start()
 
-print(api.version()) # CoreVersion(version='v1.72.1')
+print(api.version())  # CoreVersion(version='v1.72.1')
 
 api.stop()
 ```
