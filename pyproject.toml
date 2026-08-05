@@ -18,7 +18,9 @@ classifiers = [
 keywords = ["rclone"]
 
 
-dependencies = []
+dependencies = [
+  "httpx2"
+]
 
 
 [project.urls]
