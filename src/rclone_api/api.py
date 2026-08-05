@@ -1,13 +1,13 @@
 import atexit
-import json
 import logging
 import subprocess
 import threading
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import quote
+
+import httpx2
 
 from . import BINARY_PATH
 from .dto import AsyncJobResponse, ConfigListremotes, CoreStats, CoreVersion, JobList, JobStatus, LsJsonEntry, PubliclinkResponse
@@ -19,7 +19,7 @@ logger = logging.getLogger(name="rclone_api")
 class RcloneApi:
     def __init__(
         self,
-        bind="127.0.0.1:5572",  # bind to IPv4 127.0.0.1 until https://github.com/rclone/rclone-web/issues/71 is resolved
+        bind="127.0.0.1:5572",  # always bind to a local address by default because we have auth disabled for convenience
         bind_gui="127.0.0.1:5573",  # bind to IPv4 127.0.0.1 until https://github.com/rclone/rclone-web/issues/71 is resolved
         log_file: Path | None = None,
         log_level: Literal["DEBUG", "INFO", "NOTICE", "ERROR"] = "NOTICE",
@@ -39,7 +39,7 @@ class RcloneApi:
         self.__bwlimit = bwlimit
         self.__config_file = config_file
 
-        self.__connect_addr = f"http://{bind}"
+        self.__connect_addr = f"http://{self.__bind_addr}"
         self.__process = None
         self.__rclone_bin = BINARY_PATH
         self.__startstop_lock = threading.Lock()
@@ -62,19 +62,26 @@ class RcloneApi:
             # since rclone 1.74.0 a new built-in webgui is avail.
             # start using gui to enable the gui, otherwise only rcd which just exposes the api
             if self.__enable_webui:
-                logger.info("starting rclone with gui enabled")
+                logger.debug("Starting Rclone with gui enabled")
+                gui_link = f"http://{self.__bind_addr_gui.rstrip('/')}/login?url="
+                api_link = f"http://{self.__bind_addr}"
+                logger.info(f"Access Rclone using the following link {gui_link}{quote(api_link, '')}")
                 rc_cmd = "gui"
                 rc_cmd_args = [
-                    "--rc-no-auth",
+                    f"--addr={self.__bind_addr_gui}",  # gui options
+                    "--no-auth",
                     "--no-open-browser",
-                    f"--api-addr={self.__bind_addr}",
-                    f"--addr={self.__bind_addr_gui}",
+                    # "--user=rclone",
+                    # "--pass=123",
+                    f"--api-addr={self.__bind_addr}",  # rcd options
+                    "--rc-no-auth",  # rcd server option
+                    "--rc-allow-origin=*",
                 ]
             else:
-                logger.info("starting rclone with remote command daemon (api only, no gui)")
+                logger.debug("Starting Rclone with remote command daemon (api only, no gui)")
                 rc_cmd = "rcd"
                 rc_cmd_args = [
-                    "--rc-no-auth",
+                    "--rc-no-auth",  # only "safe" if bound to localhost
                     f"--rc-addr={self.__bind_addr}",
                 ]
 
@@ -152,22 +159,19 @@ class RcloneApi:
     def _post(self, endpoint: str, data: dict[str, Any] | None = None):
         TIMEOUT = 90
 
-        req = urllib.request.Request(
-            url=f"{self.__connect_addr}/{endpoint}",
-            data=json.dumps(data or {}).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
-
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-                raw_resp: bytes = resp.read()
-                response_json = json.loads(raw_resp.decode("utf-8"))
+            res = httpx2.request(
+                url=f"{self.__connect_addr}/{endpoint}",
+                json=data or {},
+                headers={"Content-Type": "application/json"},
+                method="POST",
+                timeout=httpx2.Timeout(TIMEOUT),
+            )
+            res.raise_for_status()
+            response_json = res.json()
 
-        except urllib.error.HTTPError as exc:  # non 200 HTTP codes
-            raw_exc: bytes = exc.read()
-            response_json = json.loads(raw_exc.decode("utf-8"))
-            raise RcloneProcessException.from_dict(response_json) from exc
+        except httpx2.HTTPStatusError as exc:  # non 200 HTTP codes
+            raise RcloneProcessException(error=exc.response.text, input=data, status=exc.response.status_code, path=endpoint) from exc
         except TimeoutError as exc:
             raise RcloneConnectionException(f"Operation timed out after {TIMEOUT}s. To copy large files consider using _async methods.") from exc
         except Exception as exc:  # all other errors
