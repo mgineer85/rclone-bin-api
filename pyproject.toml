@@ -14,6 +14,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
   "Programming Language :: Python :: 3.14",
+  "Programming Language :: Python :: 3.15",
 ]
 keywords = ["rclone"]
 
@@ -32,19 +33,21 @@ dev = [
   "pytest",
   "pytest-cov",
   "coverage[toml]",
-  "basedpyright",
+  "pyrefly",
   "poethepoet",
   "setuptools",
   "wheel",
   "requests",
   "psutil",
+  "types-psutil",
+  "types-setuptools",
 ]
 
 
 # uv does not yet support [tool.pdm.scripts], so we skip this for now... https://github.com/astral-sh/uv/issues/5903
 [tool.poe.tasks]
 lint = [
-  { cmd = "uv run basedpyright" },
+  { cmd = "uv run pyrefly check" },
   { cmd = "uv run ruff check" },
   { cmd = "uv run ruff format --check" },
 ]
@@ -63,11 +66,8 @@ build = [
 ]
 
 
-[tool.basedpyright]
-venvPath = "."
-venv = ".venv"
-ignore = ["./experimental/", "./vendor/"]
-typeCheckingMode = "standard"
+[tool.pyrefly]
+project-excludes = ["experimental/**"]
 
 
 [tool.ruff]
